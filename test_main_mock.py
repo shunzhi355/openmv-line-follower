@@ -54,13 +54,16 @@ class FakeFrame:
         return [FakeBlob(left, y, overlap, height)]
 
     def draw_line(self, *args, **kwargs):
-        pass
+        if not isinstance(args[0], tuple):
+            raise TypeError("draw_line expects a coordinate tuple")
 
     def draw_circle(self, *args, **kwargs):
-        pass
+        if not isinstance(args[0], tuple):
+            raise TypeError("draw_circle expects a coordinate tuple")
 
     def draw_string(self, *args, **kwargs):
-        pass
+        if not isinstance(args[0], int) or not isinstance(args[1], int):
+            raise TypeError("draw_string expects x and y integers")
 
 
 class FakeSensor:

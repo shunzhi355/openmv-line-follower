@@ -232,7 +232,7 @@ def draw_debug(img, centers, valid, near, far, active, yaw):
         img.draw_line((0, row_y, width - 1, row_y), color=100, thickness=1)
         if valid[index]:
             x = center_pixel(centers[index], width)
-            img.draw_circle(x, row_y, 4, color=255, thickness=2)
+            img.draw_circle((x, row_y, 4), color=255, thickness=2)
 
     text = "A%d Y%+04d N%+04d F%+04d" % (
         active,
