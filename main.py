@@ -100,12 +100,34 @@ def center_pixel(candidate, width):
     return int(round((1.0 - candidate) * float(width - 1) * 0.5))
 
 
+def grayscale_statistic(statistics, index, name):
+    """Read OpenMV statistics across old tuple and new attrtuple firmware.
+
+    Current firmware exposes integer fields such as ``statistics.mean``.
+    Older builds may expose methods, so only call the field when callable.
+    """
+
+    try:
+        return float(statistics[index])
+    except (IndexError, KeyError, TypeError):
+        pass
+    value = getattr(statistics, name)
+    if callable(value):
+        return float(value())
+    return float(value)
+
+
+def mean_luma(img, roi):
+    statistics = img.get_statistics(roi=roi)
+    return grayscale_statistic(statistics, 0, "mean")
+
+
 def scan_luma_stats(img, roi):
     statistics = img.get_statistics(roi=roi)
     return (
-        float(statistics.l_mean()),
-        float(statistics.l_min()),
-        float(statistics.l_max()),
+        grayscale_statistic(statistics, 0, "mean"),
+        grayscale_statistic(statistics, 4, "min"),
+        grayscale_statistic(statistics, 5, "max"),
     )
 
 
@@ -130,22 +152,21 @@ def local_contrast_ok(img, x, y, width, height):
     if width < 1 or height < 1:
         return False
     try:
-        inside = img.get_statistics(roi=(x, y, width, height)).l_mean()
+        inside = mean_luma(img, (x, y, width, height))
         outside_means = []
         padding = max(3, width)
         left_x = max(0, x - padding)
         if left_x < x:
             outside_means.append(
-                img.get_statistics(
-                    roi=(left_x, y, x - left_x, height)
-                ).l_mean()
+                mean_luma(img, (left_x, y, x - left_x, height))
             )
         right_x = min(img.width(), x + width + padding)
         if right_x > x + width:
             outside_means.append(
-                img.get_statistics(
-                    roi=(x + width, y, right_x - (x + width), height)
-                ).l_mean()
+                mean_luma(
+                    img,
+                    (x + width, y, right_x - (x + width), height),
+                )
             )
         if not outside_means:
             return True

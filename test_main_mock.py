@@ -5,18 +5,10 @@ import unittest
 
 class FakeStatistics:
     def __init__(self, mean, low, high):
-        self._mean = mean
-        self._low = low
-        self._high = high
+        self.values = (mean, mean, mean, 0, low, high)
 
-    def l_mean(self):
-        return self._mean
-
-    def l_min(self):
-        return self._low
-
-    def l_max(self):
-        return self._high
+    def __getitem__(self, index):
+        return self.values[index]
 
 
 class FakeBlob:
