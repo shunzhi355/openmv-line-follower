@@ -100,6 +100,15 @@ def center_pixel(candidate, width):
     return int(round((1.0 - candidate) * float(width - 1) * 0.5))
 
 
+def blob_value(blob, name):
+    """Read a Blob field from both current attrtuple and older method APIs."""
+
+    value = getattr(blob, name)
+    if callable(value):
+        return value()
+    return value
+
+
 def grayscale_statistic(statistics, index, name):
     """Read OpenMV statistics across old tuple and new attrtuple firmware.
 
@@ -195,19 +204,23 @@ def candidates_for_row(img, row_y, width, threshold):
     max_width = int(width * MAX_LINE_WIDTH_FRACTION)
     candidates = []
     for blob in blobs:
-        blob_width = blob.w()
-        blob_x = blob.x()
+        blob_width = blob_value(blob, "w")
+        blob_x = blob_value(blob, "x")
         if blob_width < MIN_LINE_WIDTH_PX or blob_width > max_width:
             continue
-        if blob.h() < int(roi_height * MIN_BAND_COVERAGE):
+        if blob_value(blob, "h") < int(roi_height * MIN_BAND_COVERAGE):
             continue
         if blob_x <= 1 or blob_x + blob_width >= width - 1:
             continue
         if not local_contrast_ok(
-            img, blob_x, blob.y(), blob_width, blob.h()
+            img,
+            blob_x,
+            blob_value(blob, "y"),
+            blob_width,
+            blob_value(blob, "h"),
         ):
             continue
-        candidates.append(normalized_x(blob.cx(), width))
+        candidates.append(normalized_x(blob_value(blob, "cx"), width))
     return candidates
 
 

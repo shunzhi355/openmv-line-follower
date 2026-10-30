@@ -13,25 +13,11 @@ class FakeStatistics:
 
 class FakeBlob:
     def __init__(self, x, y, width, height):
-        self._x = x
-        self._y = y
-        self._width = width
-        self._height = height
-
-    def x(self):
-        return self._x
-
-    def y(self):
-        return self._y
-
-    def w(self):
-        return self._width
-
-    def h(self):
-        return self._height
-
-    def cx(self):
-        return self._x + self._width // 2
+        self.x = x
+        self.y = y
+        self.w = width
+        self.h = height
+        self.cx = x + width // 2
 
 
 class FakeFrame:
