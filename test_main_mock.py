@@ -1,6 +1,7 @@
 import sys
 import types
 import unittest
+from unittest import mock
 
 
 class FakeStatistics:
@@ -21,9 +22,11 @@ class FakeBlob:
 
 
 class FakeFrame:
-    def __init__(self):
-        self.line_center = 80
-        self.line_width = 3
+    def __init__(self, line_center=80, line_width=3, crossbar_rows=(), empty=False):
+        self.line_center = line_center
+        self.line_width = line_width
+        self.crossbar_rows = crossbar_rows
+        self.empty = empty
 
     def width(self):
         return 160
@@ -32,6 +35,8 @@ class FakeFrame:
         return 120
 
     def _overlap(self, x, width):
+        if self.empty:
+            return 0
         start = max(x, self.line_center - self.line_width // 2)
         end = min(x + width, self.line_center + self.line_width // 2 + 1)
         return max(0, end - start)
@@ -47,6 +52,8 @@ class FakeFrame:
 
     def find_blobs(self, thresholds, roi, **kwargs):
         x, y, width, height = roi
+        if any(y <= crossbar_y < y + height for crossbar_y in self.crossbar_rows):
+            return [FakeBlob(x, y, width, height)]
         overlap = self._overlap(x, width)
         if not overlap:
             return []
@@ -122,7 +129,7 @@ class FakeClock:
 
 
 class MainHardwareFlowTest(unittest.TestCase):
-    def test_centered_line_reaches_active_uart_command(self):
+    def setUp(self):
         sensor_module = types.ModuleType("sensor")
         sensor_module.QQVGA = FakeSensor.QQVGA
         sensor_module.GRAYSCALE = FakeSensor.GRAYSCALE
@@ -137,25 +144,88 @@ class MainHardwareFlowTest(unittest.TestCase):
         pyb_module = types.ModuleType("pyb")
         pyb_module.UART = FakeUART
 
-        sys.modules["sensor"] = sensor_module
-        sys.modules["image"] = types.ModuleType("image")
-        sys.modules["pyb"] = pyb_module
+        modules = mock.patch.dict(sys.modules, {
+            "sensor": sensor_module,
+            "image": types.ModuleType("image"),
+            "pyb": pyb_module,
+        })
+        modules.start()
+        self.addCleanup(modules.stop)
         sys.modules.pop("main", None)
 
         import main
 
-        main.time.clock = lambda: FakeClock()
+        self.main = main
+        clock_patch = mock.patch.object(main.time, "clock", lambda: FakeClock(), create=True)
+        clock_patch.start()
+        self.addCleanup(clock_patch.stop)
         FakeUART.writes = []
+
+    def run_frames(self, frames):
+        with mock.patch.object(
+            self.main.sensor, "snapshot", side_effect=list(frames) + [RuntimeError("mock camera stopped")]
+        ):
+            with self.assertRaisesRegex(RuntimeError, "mock camera stopped"):
+                self.main.run()
+        return [[int(field) for field in item.decode().strip().split(",")[1:]]
+                for item in FakeUART.writes]
+
+    def test_centered_line_reaches_active_uart_command(self):
         with self.assertRaisesRegex(RuntimeError, "mock camera stopped"):
-            main.run()
+            self.main.run()
 
         messages = [item.decode().strip() for item in FakeUART.writes]
-        active_messages = [item for item in messages if ",1," in item]
+        active_messages = [item for item in messages if item.split(",")[2] == "1"]
         self.assertTrue(active_messages)
         fields = active_messages[-1].split(",")
         self.assertEqual(fields[0], "LF")
         self.assertEqual(int(fields[2]), 1)
         self.assertLess(abs(int(fields[5])), 30)
+
+    def test_loss_stops_immediately_and_requires_three_frames_to_restart(self):
+        messages = self.run_frames(
+            [FakeFrame(72)] * 4 + [FakeFrame(empty=True)] + [FakeFrame(72)] * 3
+        )
+        self.assertEqual([message[1] for message in messages], [0, 0, 1, 1, 0, 0, 0, 1])
+        self.assertEqual(messages[4][-1], 0)
+        self.assertGreater(messages[-1][-1], 0)
+
+    def test_crossbar_in_one_band_preserves_other_bands(self):
+        messages = self.run_frames([FakeFrame(crossbar_rows=(71,))] * 4)
+        self.assertEqual(messages[-1][1], 1)
+        self.assertLess(abs(messages[-1][-1]), 30)
+
+    def test_crossbar_hiding_three_bands_stops_motion(self):
+        messages = self.run_frames(
+            [FakeFrame()] * 3 + [FakeFrame(crossbar_rows=(97, 84, 71))]
+        )
+        self.assertEqual(messages[-2][1], 1)
+        self.assertEqual(messages[-1][1], 0)
+        self.assertEqual(messages[-1][-1], 0)
+
+    def test_default_mode_uses_weighted_bearing_in_uart(self):
+        self.main.YAW_SMOOTHING = 1.0
+        messages = self.run_frames([FakeFrame(72)] * 3)
+        # x=72 -> normalized offset=15/159. The upstream bearing is atan(15/120).
+        # Weighted mode gives ~37 mrad/s; legacy mode would give ~33 mrad/s.
+        self.assertEqual(messages[-1][-1], 37)
+
+    def test_original_steering_mode_remains_selectable(self):
+        self.main.STEERING_MODE = "near_far"
+        self.main.YAW_SMOOTHING = 1.0
+        messages = self.run_frames([FakeFrame(72)] * 3)
+        self.assertEqual(messages[-1][-1], 33)
+
+    def test_right_offset_produces_negative_uart_yaw(self):
+        messages = self.run_frames([FakeFrame(87)] * 3)
+        self.assertLess(messages[-1][-1], 0)
+
+    def test_old_method_and_current_attribute_blob_apis(self):
+        class OldBlob:
+            def w(self):
+                return 3
+        self.assertEqual(self.main.blob_value(OldBlob(), "w"), 3)
+        self.assertEqual(self.main.blob_value(FakeBlob(78, 50, 3, 7), "w"), 3)
 
 
 if __name__ == "__main__":

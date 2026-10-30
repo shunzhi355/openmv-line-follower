@@ -1,0 +1,3 @@
+# Preserve exact upstream bytes so SOURCE.json hashes survive checkout.
+third_party/openmv/*.reference -text
+third_party/openmv/LICENSE -text

@@ -10,7 +10,7 @@ import sensor
 import image
 from pyb import UART
 
-from line_core import LineTracker, steering_from_image
+from line_core import LineTracker, steering_from_image, steering_from_rois
 
 
 # Camera --------------------------------------------------------------------
@@ -38,9 +38,13 @@ STARTUP_MAX_OFFSET = 0.45
 OUTLIER_RESIDUAL = 0.12
 
 # Steering ------------------------------------------------------------------
+STEERING_MODE = "weighted_roi"  # weighted_roi, or near_far for the original mode
+# Near -> far. Adapted from OpenMV's weighted ROI line-following example.
+ROI_WEIGHTS = (0.40, 0.25, 0.18, 0.11, 0.06)
+ROI_ANGLE_GAIN = 0.30  # Image bearing in radians -> requested yaw rate.
 NEAR_REFERENCE = 0.0
 HEADING_REFERENCE = 0.0
-LATERAL_GAIN = 0.35
+LATERAL_GAIN = 0.35  # Used by near_far mode only.
 HEADING_GAIN = 0.80
 LATERAL_DEADBAND = 0.0
 HEADING_DEADBAND = 0.0
@@ -258,6 +262,10 @@ def send_uart(uart, sequence, active, near, far, yaw):
 
 
 def run():
+    if STEERING_MODE not in ("weighted_roi", "near_far"):
+        raise ValueError("STEERING_MODE must be weighted_roi or near_far")
+    if len(ROI_WEIGHTS) != len(SCAN_ROWS) or any(w <= 0 for w in ROI_WEIGHTS):
+        raise ValueError("Use one positive ROI weight for each scan row")
     setup_camera()
     uart = setup_uart()
     tracker = LineTracker(
@@ -324,23 +332,35 @@ def run():
             if acquired_frames < ACQUIRE_FRAMES:
                 acquired_frames += 1
             if acquired_frames >= ACQUIRE_FRAMES:
-                target_yaw = steering_from_image(
-                    near,
-                    far,
-                    near_reference=NEAR_REFERENCE,
-                    heading_reference=HEADING_REFERENCE,
-                    lateral_gain=LATERAL_GAIN,
-                    heading_gain=HEADING_GAIN,
-                    lateral_deadband=LATERAL_DEADBAND,
-                    heading_deadband=HEADING_DEADBAND,
-                    yaw_limit=YAW_LIMIT,
-                    turn_sign=TURN_SIGN,
-                )
+                if STEERING_MODE == "weighted_roi":
+                    target_yaw = steering_from_rois(
+                        SCAN_ROWS, centers, valid, ROI_WEIGHTS,
+                        width, height, near, far,
+                        near_reference=NEAR_REFERENCE,
+                        heading_reference=HEADING_REFERENCE,
+                        angle_gain=ROI_ANGLE_GAIN,
+                        heading_gain=HEADING_GAIN,
+                        lateral_deadband=LATERAL_DEADBAND,
+                        heading_deadband=HEADING_DEADBAND,
+                        yaw_limit=YAW_LIMIT,
+                        turn_sign=TURN_SIGN,
+                        min_valid_rows=MIN_VALID_ROWS,
+                    )
+                else:
+                    target_yaw = steering_from_image(
+                        near,
+                        far,
+                        near_reference=NEAR_REFERENCE,
+                        heading_reference=HEADING_REFERENCE,
+                        lateral_gain=LATERAL_GAIN,
+                        heading_gain=HEADING_GAIN,
+                        lateral_deadband=LATERAL_DEADBAND,
+                        heading_deadband=HEADING_DEADBAND,
+                        yaw_limit=YAW_LIMIT,
+                        turn_sign=TURN_SIGN,
+                    )
                 smoothed_yaw += YAW_SMOOTHING * (target_yaw - smoothed_yaw)
-                if (
-                    abs(near - NEAR_REFERENCE) <= LATERAL_DEADBAND
-                    and abs(far - near - HEADING_REFERENCE) <= HEADING_DEADBAND
-                ):
+                if target_yaw == 0.0:
                     smoothed_yaw = 0.0
                 active = 1
                 yaw = smoothed_yaw

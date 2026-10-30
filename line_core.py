@@ -4,6 +4,8 @@ Coordinates are normalized to [-1, 1]. Positive values point toward the
 left side of the image, matching the Orange Pi reference implementation.
 """
 
+import math
+
 
 def clamp(value, low, high):
     if value < low:
@@ -213,4 +215,67 @@ def steering_from_image(
     lateral_error = deadband(lateral_error, lateral_deadband)
     heading_error = deadband(heading_error, heading_deadband)
     yaw = lateral_gain * lateral_error + heading_gain * heading_error
+    return clamp(turn_sign * yaw, -yaw_limit, yaw_limit)
+
+
+def steering_from_rois(
+    rows,
+    centers,
+    valid,
+    weights,
+    width,
+    height,
+    near,
+    far,
+    near_reference=0.0,
+    heading_reference=0.0,
+    angle_gain=0.30,
+    heading_gain=0.80,
+    lateral_deadband=0.0,
+    heading_deadband=0.0,
+    yaw_limit=0.12,
+    turn_sign=1,
+    min_valid_rows=3,
+):
+    """Combine weighted ROI bearing with the existing heading controller.
+
+    Weighted centroids and atan bearing are adapted from OpenMV's MIT-licensed
+    black_grayscale_line_following.py (v4.5.9). Copyright (c) 2013-2023 OpenMV
+    LLC. See third_party/openmv/ for the original source and license.
+
+    Inputs are the *associated, inlier* line centers, never the largest blob
+    in each band. Missing bands contribute neither an offset nor a weight.
+    The bearing is an image-space angle, not a measured ground-plane angle.
+    """
+
+    count = len(rows)
+    if count < 3 or not (len(centers) == len(valid) == len(weights) == count):
+        raise ValueError("ROI rows, centers, validity and weights must match")
+    if not all(first > second for first, second in zip(rows, rows[1:])):
+        raise ValueError("ROI rows must be ordered from near to far")
+    if any(weight <= 0 for weight in weights):
+        raise ValueError("ROI weights must be positive")
+    if not 1 <= min_valid_rows <= count:
+        raise ValueError("Invalid min_valid_rows")
+    if width < 2 or height < 1:
+        raise ValueError("Invalid image dimensions")
+    if sum(valid) < min_valid_rows:
+        return 0.0
+
+    weighted_error = 0.0
+    weight_sum = 0.0
+    row_span = rows[0] - rows[-1]
+    for index in range(count):
+        if valid[index]:
+            position = (rows[0] - rows[index]) / row_span
+            reference = near_reference + heading_reference * position
+            weighted_error += (centers[index] - reference) * weights[index]
+            weight_sum += weights[index]
+
+    lateral_error = deadband(weighted_error / weight_sum, lateral_deadband)
+    # Normalized x is positive to the left. Convert back to pixels, then
+    # divide by half the image height as in the upstream atan calculation.
+    bearing = math.atan(lateral_error * float(width - 1) / float(height))
+    heading_error = deadband(far - near - heading_reference, heading_deadband)
+    yaw = angle_gain * bearing + heading_gain * heading_error
     return clamp(turn_sign * yaw, -yaw_limit, yaw_limit)

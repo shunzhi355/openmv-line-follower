@@ -1,0 +1,18 @@
+{
+  "repository": "https://github.com/openmv/openmv",
+  "revision": "f1aa0247d8052d43ba0a9a07a4fbcd867c47d134",
+  "tag": "v4.5.9",
+  "license": "MIT",
+  "files": [
+    {
+      "upstream_path": "scripts/examples/02-Image-Processing/02-Color-Tracking/black_grayscale_line_following.py",
+      "local_path": "black_grayscale_line_following.py.reference",
+      "sha256": "9d9febb8b6aedb8e0fb4fc0aa88aca7fa0bd9814ee8861735eb16d8238c0b3e5"
+    },
+    {
+      "upstream_path": "LICENSE",
+      "local_path": "LICENSE",
+      "sha256": "01b2548e60a5aa32f6408c86f727c38d9e7f44080808dc1d088612ff17bc581f"
+    }
+  ]
+}
