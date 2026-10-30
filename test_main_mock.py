@@ -27,6 +27,7 @@ class FakeFrame:
         self.line_width = line_width
         self.crossbar_rows = crossbar_rows
         self.empty = empty
+        self.drawn_strings = []
 
     def width(self):
         return 160
@@ -69,8 +70,13 @@ class FakeFrame:
             raise TypeError("draw_circle expects a coordinate tuple")
 
     def draw_string(self, *args, **kwargs):
-        if not isinstance(args[0], int) or not isinstance(args[1], int):
-            raise TypeError("draw_string expects x and y integers")
+        if not isinstance(args[0], tuple):
+            raise TypeError("object 'int' isn't a tuple or list")
+        if len(args) != 2 or len(args[0]) != 2:
+            raise ValueError("draw_string expects (x, y), text")
+        if not isinstance(args[1], str):
+            raise TypeError("draw_string expects text after the position tuple")
+        self.drawn_strings.append((args[0], args[1], kwargs))
 
 
 class FakeSensor:
@@ -226,6 +232,30 @@ class MainHardwareFlowTest(unittest.TestCase):
                 return 3
         self.assertEqual(self.main.blob_value(OldBlob(), "w"), 3)
         self.assertEqual(self.main.blob_value(FakeBlob(78, 50, 3, 7), "w"), 3)
+
+    def test_debug_text_accepts_current_tuple_coordinate_api(self):
+        frame = FakeFrame()
+        self.main.draw_debug(frame, [0.0] * 5, [True] * 5, 0.0, 0.0, 1, 0.0)
+        self.assertEqual(frame.drawn_strings, [
+            ((2, 2), "A1 Y+000 N+000 F+000", {"color": 255, "scale": 1})
+        ])
+
+    def test_debug_text_falls_back_to_legacy_api(self):
+        for error_type in (TypeError, ValueError):
+            with self.subTest(error_type=error_type):
+                class LegacyFrame(FakeFrame):
+                    def draw_string(self, *args, **kwargs):
+                        if isinstance(args[0], tuple):
+                            raise error_type("legacy firmware requires x, y, text")
+                        if len(args) != 3:
+                            raise ValueError("expected three arguments")
+                        self.drawn_strings.append(((args[0], args[1]), args[2], kwargs))
+
+                frame = LegacyFrame()
+                self.main.draw_debug(frame, [0.0] * 5, [True] * 5, 0.0, 0.0, 1, 0.0)
+                self.assertEqual(frame.drawn_strings, [
+                    ((2, 2), "A1 Y+000 N+000 F+000", {"color": 255, "scale": 1})
+                ])
 
 
 if __name__ == "__main__":

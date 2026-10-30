@@ -228,6 +228,17 @@ def candidates_for_row(img, row_y, width, threshold):
     return candidates
 
 
+def draw_string_compat(img, x, y, text, color=255, scale=1):
+    """Use current (x, y), text API, with a fallback for older firmware."""
+
+    try:
+        return img.draw_string((x, y), text, color=color, scale=scale)
+    except (TypeError, ValueError):
+        # Older firmware consumes x, y, text as three arguments (or a
+        # three-element tuple), and rejects the two-element position tuple.
+        return img.draw_string(x, y, text, color=color, scale=scale)
+
+
 def draw_debug(img, centers, valid, near, far, active, yaw):
     width = img.width()
     height = img.height()
@@ -244,7 +255,7 @@ def draw_debug(img, centers, valid, near, far, active, yaw):
         int(round(near * 1000.0)),
         int(round(far * 1000.0)),
     )
-    img.draw_string(2, 2, text, color=255, scale=1)
+    draw_string_compat(img, 2, 2, text, color=255, scale=1)
 
 
 def send_uart(uart, sequence, active, near, far, yaw):

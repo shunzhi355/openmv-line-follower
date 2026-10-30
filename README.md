@@ -25,6 +25,8 @@
 并保留 `near/far` 方向修正、启动确认、失线停车和原串口协议。
 运行不需要安装 OpenCV、NumPy 或额外固件包。历史修复的 Blob/Statistics
 整数属性兼容，以及 `draw_circle((x, y, r), ...)` 元组接口仍然保留。
+文字绘制通过 `draw_string_compat()` 优先调用新固件的
+`draw_string((x, y), text, ...)`，旧固件则回退到 `draw_string(x, y, text, ...)`。
 
 尚未找到能确认使用同一张 503 赛道地图、且能直接运行于本机 OpenMV 的完整双足项目。
 本次是算法适配，不代表原项目已在本赛道验收。起终点横线使某个扫描带过宽时会剔除该带；
